@@ -1,0 +1,14 @@
+{
+  "name": "@devzeng/soundtouch",
+  "version": "0.1.0",
+  "description": "SoundTouch for HarmonyOS.",
+  "main": "Index.ets",
+  "author": "zengjing <hhtczengjing@gmail.com>",
+  "license": "MIT",
+  "keywords": ["SoundTouch", "wav", "audio"],
+  "homepage": "https://github.com/hhtczengjing/ohos_soundtouch",
+  "repository": "https://github.com/hhtczengjing/ohos_soundtouch.git",
+  "dependencies": {
+    "libsoundtouch.so": "file:./src/main/cpp/types/libsoundtouch"
+  }
+}
