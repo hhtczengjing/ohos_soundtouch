@@ -2,8 +2,10 @@
 #include "napi/native_api.h"
 #include "napi_utils.h"
 #include "SoundStretch.h"
+#include <unistd.h>
 
-static RunParameters * readRunParameters(napi_env env, napi_value optionsNapiValue) {
+static RunParameters * readRunParameters(napi_env env, napi_value optionsNapiValue) 
+{
     RunParameters *params = new RunParameters();
     if (!IsNValueUndefined(env, optionsNapiValue)) {
         // tempo
@@ -77,7 +79,7 @@ static RunParameters * readRunParameters(napi_env env, napi_value optionsNapiVal
     return params;
 }
 
-static napi_value ProcessSync(napi_env env, napi_callback_info info)
+static napi_value ProcessSync(napi_env env, napi_callback_info info) 
 {
     size_t argc = 3;
     napi_value args[3] = {nullptr};
@@ -87,11 +89,34 @@ static napi_value ProcessSync(napi_env env, napi_callback_info info)
     std::string outputPath = NValueToString(env, args[1]);
     RunParameters *params = readRunParameters(env,  args[2]);
     
+    if (inputPath.empty() || outputPath.empty()) {
+        return Int32ToNValue(env, -1);
+    }
+    if (access(inputPath.c_str(), F_OK) == -1) {
+        return Int32ToNValue(env, -1);
+    }
+    if (access(outputPath.c_str(), F_OK) == 0) {
+        remove(outputPath.c_str());
+    }
+    
     int res = run(inputPath.c_str(), outputPath.c_str(), params);
     return Int32ToNValue(env,res);
 }
 
-static napi_value ProcessAsync(napi_env env, napi_callback_info info) {
+struct SoundTouchCallback {
+    napi_async_work asyncWork = nullptr;
+    napi_deferred deferred = nullptr;
+    napi_ref callback = nullptr;
+    
+    std::string inputPath;
+    std::string outputPath;
+    RunParameters *params;
+    
+    int result;
+};
+
+static napi_value ProcessAsync(napi_env env, napi_callback_info info) 
+{
     size_t argc = 3;
     napi_value args[3] = {nullptr};
     NAPI_CALL(napi_get_cb_info(env, info, &argc, args, nullptr, nullptr));
@@ -100,7 +125,46 @@ static napi_value ProcessAsync(napi_env env, napi_callback_info info) {
     std::string outputPath = NValueToString(env, args[1]);
     RunParameters *params = readRunParameters(env,  args[2]);
     
-    return NAPIUndefined(env);
+    if (inputPath.empty() || outputPath.empty()) {
+        return Int32ToNValue(env, -1);
+    }
+    if (access(inputPath.c_str(), F_OK) == -1) {
+        return Int32ToNValue(env, -1);
+    }
+    if (access(outputPath.c_str(), F_OK) == 0) {
+        remove(outputPath.c_str());
+    }
+    
+    napi_value promise = nullptr;
+    napi_deferred deferred = nullptr;
+    napi_create_promise(env, &deferred, &promise);
+    
+    auto callbackData = new SoundTouchCallback();
+    callbackData->deferred = deferred;
+    callbackData->inputPath = inputPath;
+    callbackData->outputPath = outputPath;
+    callbackData->params = params;
+    
+    napi_value resourceName = nullptr;
+    napi_create_string_utf8(env, "AsyncCallback", NAPI_AUTO_LENGTH, &resourceName);
+    napi_create_async_work(env, nullptr, resourceName, [](napi_env env, void *data) {
+        SoundTouchCallback *callbackData = reinterpret_cast<SoundTouchCallback *>(data);
+        int res = run(callbackData->inputPath.c_str(), callbackData->outputPath.c_str(), callbackData->params);
+        callbackData->result = res;
+    }, [](napi_env env, napi_status status, void *data) {
+        SoundTouchCallback *callbackData = reinterpret_cast<SoundTouchCallback *>(data);
+        if (status != napi_ok) {
+            napi_reject_deferred(env, callbackData->deferred, nullptr);
+            delete callbackData;
+            return;
+        }
+        auto result = callbackData->result;
+        napi_resolve_deferred(env, callbackData->deferred, Int32ToNValue(env, result));
+        napi_delete_async_work(env, callbackData->asyncWork);
+        delete callbackData;
+    }, callbackData, &callbackData->asyncWork);
+    napi_queue_async_work(env, callbackData->asyncWork);
+    return promise;
 }
 
 EXTERN_C_START

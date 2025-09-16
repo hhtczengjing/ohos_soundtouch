@@ -5,7 +5,7 @@
   "main": "Index.ets",
   "author": "zengjing <hhtczengjing@gmail.com>",
   "license": "MIT",
-  "keywords": ["SoundTouch", "wav", "audio"],
+  "keywords": ["SoundTouch", "wav", "audio", "voice"],
   "homepage": "https://github.com/hhtczengjing/ohos_soundtouch",
   "repository": "https://github.com/hhtczengjing/ohos_soundtouch.git",
   "dependencies": {

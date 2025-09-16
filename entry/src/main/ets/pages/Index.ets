@@ -6,44 +6,56 @@ import { audio } from '@kit.AudioKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { promptAction } from '@kit.ArkUI';
 
-const TAG = 'Index';
+const TAG = '[Index]';
+
+@Extend(Button)
+function btnStyle() {
+  .fontSize(16)
+  .fontWeight(FontWeight.Regular)
+  .backgroundColor('#344F9C')
+}
 
 @Entry
 @Component
 struct Index {
   @State input: string = '';
   @State output: string = '';
-  @State loading: boolean = false;
+  @State finished: boolean = false;
   private count: number = 0;
   private isSeek: boolean = true; // 用于区分模式是否支持seek操作
   private avPlayer?: media.AVPlayer;
 
   build() {
     Column() {
-      Button('转换')
-        .fontSize(16)
-        .fontWeight(FontWeight.Regular)
-        .backgroundColor('#344F9C')
-        .width('80%')
-        .margin({ top: 40 })
-        .onClick(() => {
-          this.processAudioFile()
-        })
+      Row() {
+        Button('同步转换')
+          .btnStyle()
+          .width('45%')
+          .onClick(() => {
+            this.processAudioFile()
+          })
+
+        Button('异步转换')
+          .btnStyle()
+          .width('45%')
+          .onClick(() => {
+            this.processAudioFileAsync()
+          })
+      }
+      .justifyContent(FlexAlign.SpaceBetween)
+      .width('80%')
+      .margin({ top: 40 })
 
       Row() {
         Button('开始播放')
-          .fontSize(16)
-          .fontWeight(FontWeight.Regular)
-          .backgroundColor('#344F9C')
+          .btnStyle()
           .width('45%')
           .onClick(() => {
             this.startPlayAudioFile()
           })
 
         Button("停止播放")
-          .fontSize(16)
-          .fontWeight(FontWeight.Regular)
-          .backgroundColor('#344F9C')
+          .btnStyle()
           .width('45%')
           .onClick(() => {
             this.stopPlayAudioFile()
@@ -60,44 +72,75 @@ struct Index {
     .width('100%')
   }
 
+  private copyAudioFile(): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const context = getContext();
+      context.resourceManager.getRawFd('audio.wav', (err, data) => {
+        if (err != null) {
+          console.error(TAG, `getRawFd error: [${err.code}]${err.message}`);
+          reject(err);
+          return;
+        }
+        // 拷贝audio.wav
+        let filePath = context.tempDir + "/audio.wav";
+        if (fileIo.accessSync(filePath)) {
+          fileIo.unlinkSync(filePath);
+        }
+        console.log(TAG, `copy audio.wav to ${filePath}`);
+        const dest = fileIo.openSync(filePath, fileIo.OpenMode.CREATE | fileIo.OpenMode.READ_WRITE);
+        let bufsize = 4096;
+        let buf = new ArrayBuffer(bufsize);
+        let off = 0, len = 0, readedLen = 0;
+        while (len = fileIo.readSync(data.fd, buf, { offset: data.offset + off, length: bufsize })) {
+          readedLen += len;
+          fileIo.writeSync(dest.fd, buf, { offset: off, length: len });
+          off = off + len;
+          if ((data.length - readedLen) < bufsize) {
+            bufsize = data.length - readedLen;
+          }
+        }
+        fileIo.close(dest.fd);
+        resolve(filePath);
+      });
+    });
+  }
+
   private processAudioFile() {
     const context = getContext();
-    context.resourceManager.getRawFd('audio.wav', (err, data) => {
-      if (err != null) {
-        console.error(TAG, `getRawFd error: [${ err.code }]${ err.message }`);
-        return;
-      }
-      // 拷贝audio.wav
-      let filePath = context.tempDir + "/audio.wav";
-      if (fileIo.accessSync(filePath)) {
-        fileIo.unlinkSync(filePath);
-      }
-      console.log(TAG, `copy audio.wav to ${ filePath }`);
-      const dest = fileIo.openSync(filePath, fileIo.OpenMode.CREATE | fileIo.OpenMode.READ_WRITE);
-      let bufsize = 4096;
-      let buf = new ArrayBuffer(bufsize);
-      let off = 0, len = 0, readedLen = 0;
-      while (len = fileIo.readSync(data.fd, buf, { offset: data.offset + off, length: bufsize })) {
-        readedLen += len;
-        fileIo.writeSync(dest.fd, buf, { offset: off, length: len });
-        off = off + len;
-        if ((data.length - readedLen) < bufsize) {
-          bufsize = data.length - readedLen;
-        }
-      }
-      fileIo.close(dest.fd);
-
+    this.copyAudioFile().then((filePath) => {
       let filePath1 = context.tempDir + "/audio_1.wav";
       if (fileIo.accessSync(filePath1)) {
         fileIo.unlinkSync(filePath1);
       }
+
       const options: SoundTouchOptions = {
         tempo: 15,
         pitch: 3
       }
       SoundTouch.processSync(filePath, filePath1, options);
       promptAction.showToast({message: '转换完成'});
-    })
+    });
+  }
+
+  private processAudioFileAsync() {
+    const context = getContext();
+    this.copyAudioFile().then((filePath) => {
+      let filePath1 = context.tempDir + "/audio_1.wav";
+      if (fileIo.accessSync(filePath1)) {
+        fileIo.unlinkSync(filePath1);
+      }
+
+      const options: SoundTouchOptions = {
+        tempo: 15,
+        pitch: 3
+      }
+      SoundTouch.process(filePath, filePath1, options).then(() => {
+        promptAction.showToast({message: `转换完成`});
+      }).catch((error: BusinessError) => {
+        console.error(TAG, `process error: ${ JSON.stringify(error) }`);
+        promptAction.showToast({message: '转换失败'});
+      });
+    });
   }
 
   private async startPlayAudioFile() {
@@ -125,8 +168,7 @@ struct Index {
     this.avPlayer!.stop()
   }
 
-  // 注册avplayer回调函数
-  setAVPlayerCallback(avPlayer: media.AVPlayer) {
+  private setAVPlayerCallback(avPlayer: media.AVPlayer) {
     // seek操作结果回调函数
     avPlayer.on('seekDone', (seekDoneTime: number) => {
       console.info(`AVPlayer seek succeeded, seek time is ${seekDoneTime}`);
