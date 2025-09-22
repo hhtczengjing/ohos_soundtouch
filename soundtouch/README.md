@@ -2,6 +2,8 @@
 
 SoundTouch for HarmonyOS.
 
+基于 [SoundTouch Audio Processing Library](https://www.surina.net/soundtouch/index.html) 实现
+
 ## 安装
 
 ```shell
